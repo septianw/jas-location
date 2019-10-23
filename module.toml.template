@@ -1,0 +1,13 @@
+name = "location"
+version = "versionplaceholder"
+sofile = "location.so"
+permission = [
+"Create location",
+"Access location",
+"Modify location",
+"Delete location",
+]
+scope = [
+"profile",
+]
+dependency = []
