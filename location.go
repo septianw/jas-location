@@ -1,24 +1,62 @@
-package main
+package location
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
-	"net/http"
+	"strconv"
 	"strings"
 
-	// "encoding/json"
-	"strconv"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
-	loc "github.com/septianw/jas-location/package"
+	"github.com/septianw/jas/common"
 )
 
-/*
-  `uid` INT NOT NULL AUTO_INCREMENT,
-  `uname` VARCHAR(225) NOT NULL,
-  `upass` TEXT NOT NULL,
-  `contact_contactid` INT NOT NULL,
-*/
+func getdbobj() (db *sql.DB, err error) {
+	rt := common.ReadRuntime()
+	dbs := common.LoadDatabase(filepath.Join(rt.Libloc, "database.so"), rt.Dbconf)
+	db, err = dbs.OpenDb(rt.Dbconf)
+	return
+}
+
+func Query(q string) (*sql.Rows, error) {
+	db, err := getdbobj()
+	common.ErrHandler(err)
+	defer db.Close()
+
+	return db.Query(q)
+}
+
+func Exec(q string) (sql.Result, error) {
+	db, err := getdbobj()
+	common.ErrHandler(err)
+	defer db.Close()
+
+	return db.Exec(q)
+}
+
+type LocationFull struct {
+	Locid     int64
+	Name      sql.NullString
+	Latitude  sql.NullFloat64
+	Longitude sql.NullFloat64
+	Deleted   int8
+}
+
+type LocationOut struct {
+	Locid     int64   `json:"locid" binding:"required"`
+	Name      string  `json:"name" binding:"required"`
+	Latitude  float64 `json:"latitude" binding:"required"`
+	Longitude float64 `json:"longitude" binding:"required"`
+}
+
+type LocationIn struct {
+	Name      string  `json:"name" binding:"required"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
 
 /*
 ERROR CODE LEGEND:
@@ -47,250 +85,237 @@ const DATABASE_EXEC_FAIL = 2200
 const MODULE_OPERATION_FAIL = 2102
 const INPUT_VALIDATION_FAIL = 2110
 
-const VERSION = loc.Version
-
 var NOT_ACCEPTABLE = gin.H{"code": "NOT_ACCEPTABLE", "message": "You are trying to request something not acceptible here."}
 var NOT_FOUND = gin.H{"code": "NOT_FOUND", "message": "You are find something we can't found it here."}
+var LastId int64
 
-var segments []string
+func formatFloat(input string, decimal int) float64 {
+	var out []string
+	_, err := strconv.ParseFloat(input, 8)
+	if err != nil {
+		return 0.0
+	}
 
-func Bootstrap() {
-	fmt.Println("Module location bootstrap.")
+	segments := strings.Split(input, ".")
+	segmentByte := []byte(segments[1])
+	out = append(out, segments[0])
+	//fmt.Println()
+	out = append(out, string(segmentByte[:decimal]))
+	f, err := strconv.ParseFloat(strings.Join(out, "."), 8)
+	if err != nil {
+		return 0.0
+	}
+
+	return f
 }
 
 /*
-POST   /user
-GET    /user/(:uid)
-GET    /user/all/(:offset)/(:limit)
------
-ini masuk ke terminal
-GET    /user/login
-	basic auth
-	return token, refresh token
------
-PUT    /user/(:uid)
-DELETE /user/(:uid)
+CREATE TABLE `location` (
+  `locid` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) COLLATE utf8_unicode_ci DEFAULT NULL,
+  `latitude` decimal(10,8) DEFAULT NULL,
+  `longitude` decimal(11,8) DEFAULT NULL,
+  `deleted` TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`locid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 */
 
-func Router(r *gin.Engine) {
-	// db := common.LoadDatabase()
-	r.Any("/api/v1/location/*path1", deflt)
-	// r.GET("/user/list", func(c *gin.Context) {
-	// 	c.String(http.StatusOK, "wow")
-	// })
-}
+func InsertLocation(locin LocationIn) (Location LocationOut, err error) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	var sbLoc strings.Builder
+	var Locations []LocationOut
 
-func deflt(c *gin.Context) {
-	segments := strings.Split(c.Param("path1"), "/")
-	// log.Printf("\n%+v\n", c.Request.Method)
-	// log.Printf("\n%+v\n", c.Param("path1"))
-	// log.Printf("\n%+v\n", segments)
-	// log.Printf("\n%+v\n", len(segments))
-	switch c.Request.Method {
-	case "POST":
-		if strings.Compare(segments[1], "") == 0 {
-			PostLocationHandler(c)
-		} else {
-			c.AbortWithStatusJSON(http.StatusMethodNotAllowed, loc.NOT_ACCEPTABLE)
-		}
-		break
-	case "GET":
-		if strings.Compare(segments[1], "all") == 0 {
-			GetLocationAllHandler(c)
-		} else if i, e := strconv.Atoi(segments[1]); (e == nil) && (i > 0) {
-			GetLocationHandler(c)
-		} else {
-			c.AbortWithStatusJSON(http.StatusNotAcceptable, loc.NOT_ACCEPTABLE)
-		}
-		break
-	case "PUT":
-		if i, e := strconv.Atoi(segments[1]); (e == nil) && (i > 0) {
-			PutLocationHandler(c)
-		} else {
-			c.AbortWithStatusJSON(http.StatusMethodNotAllowed, loc.NOT_ACCEPTABLE)
-		}
-		break
-	case "DELETE":
-		if i, e := strconv.Atoi(segments[1]); (e == nil) && (i > 0) {
-			DeleteLocationHandler(c)
-		} else {
-			c.AbortWithStatusJSON(http.StatusMethodNotAllowed, loc.NOT_ACCEPTABLE)
-		}
-		break
-	default:
-		c.AbortWithStatusJSON(http.StatusMethodNotAllowed, loc.NOT_ACCEPTABLE)
-		break
-	}
-	// c.String(http.StatusOK, "hai")
-}
+	sbLoc.WriteString(fmt.Sprintf(`Insert into location (name, latitude, longitude, deleted)
+	values ('%s', %2.8f, %3.8f, 0)`, locin.Name, locin.Latitude, locin.Longitude))
+	log.Println(sbLoc.String())
 
-func dummyResponse(c *gin.Context) {
-	c.String(http.StatusOK, "wow")
-}
-
-func PostLocationHandler(c *gin.Context) {
-	var input loc.LocationIn
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": loc.INPUT_VALIDATION_FAIL,
-			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", err.Error())})
+	result, err := Exec(sbLoc.String())
+	log.Println(result, err)
+	if err != nil {
 		return
 	}
 
-	Location, err := loc.InsertLocation(input)
+	LastId, err = result.LastInsertId()
 	if err != nil {
-		if strings.Compare("Contact not found.", err.Error()) == 0 {
-			c.JSON(http.StatusNotFound, loc.NOT_FOUND)
-			return
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": loc.DATABASE_EXEC_FAIL,
-				"message": fmt.Sprintf("DATABASE_EXEC_FAIL: %s", err.Error())})
-			return
-		}
-	}
-
-	c.JSON(http.StatusCreated, Location)
-}
-
-func GetLocationAllHandler(c *gin.Context) {
-	var segments = strings.Split(c.Param("path1"), "/")
-	var l, o int64
-	var limit, offset int
-	var err error
-
-	if len(segments) == 3 {
-		limit = 10
-		offset, err = strconv.Atoi(segments[2])
-	} else if len(segments) == 4 {
-		limit, err = strconv.Atoi(segments[3])
-		offset, err = strconv.Atoi(segments[2])
-	} else {
-		limit = 10
-		offset = 0
-	}
-
-	if err == nil { // tidak ada error dari konversi
-		l = int64(limit)
-		o = int64(offset)
-	}
-
-	Locations, err := loc.GetLocation(-1, l, o)
-	if err != nil {
-		if strings.Compare("Contact not found.", err.Error()) == 0 {
-			c.JSON(http.StatusNotFound, loc.NOT_FOUND)
-			return
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": loc.DATABASE_EXEC_FAIL,
-				"message": fmt.Sprintf("DATABASE_EXEC_FAIL: %s", err.Error())})
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, Locations)
-}
-
-func GetLocationHandler(c *gin.Context) {
-	var segments = strings.Split(c.Param("path1"), "/")
-	var id int64 = 0
-
-	i, e := strconv.Atoi(segments[1])
-
-	if e == nil { // konversi berhasil
-		id = int64(i)
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"code": loc.INPUT_VALIDATION_FAIL,
-			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", e.Error())})
 		return
 	}
 
-	Locations, err := loc.GetLocation(id, 0, 0)
+	Locations, err = GetLocation(LastId, 0, 0)
 	if err != nil {
-		if strings.Compare("Contact not found.", err.Error()) == 0 {
-			c.JSON(http.StatusNotFound, loc.NOT_FOUND)
-			return
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": loc.DATABASE_EXEC_FAIL,
-				"message": fmt.Sprintf("DATABASE_EXEC_FAIL: %s", err.Error())})
-			return
-		}
+		return
+	}
+	if len(Locations) == 0 {
+		return LocationOut{}, errors.New("Location not found.")
 	}
 
-	c.JSON(http.StatusOK, Locations[0])
+	Location = Locations[0]
+
 	return
 }
 
-func PutLocationHandler(c *gin.Context) {
+func FindLocation(Location LocationIn) (Locations []LocationOut, err error) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	var input loc.LocationIn
+	var sbLoc strings.Builder
+	var lf LocationFull
+	var locout LocationOut
 
-	var segments = strings.Split(c.Param("path1"), "/")
-	var id int64
+	sbLoc.WriteString("SELECT locid, name, latitude, longitude FROM location WHERE deleted = 0")
 
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": loc.INPUT_VALIDATION_FAIL,
-			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", err.Error())})
-		return
+	if strings.Compare(Location.Name, "") != 0 {
+		sbLoc.WriteString(fmt.Sprintf(" and name = '%s'", Location.Name))
+	}
+	if Location.Latitude != 0 {
+		sbLoc.WriteString(fmt.Sprintf(" and latitude = %2.8f", Location.Latitude))
+	}
+	if Location.Longitude != 0 {
+		sbLoc.WriteString(fmt.Sprintf(" and longitude = %3.8f", Location.Longitude))
 	}
 
-	i, e := strconv.Atoi(segments[1])
-	if e == nil { // konversi berhasil
-		id = int64(i)
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"code": loc.INPUT_VALIDATION_FAIL,
-			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", e.Error())})
-		return
-	}
-
-	Location, err := loc.UpdateLocation(id, input)
+	log.Println(sbLoc.String())
+	rows, err := Query(sbLoc.String())
 	if err != nil {
-		if strings.Compare("Contact not found.", err.Error()) == 0 {
-			c.JSON(http.StatusNotFound, loc.NOT_FOUND)
-			return
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": loc.DATABASE_EXEC_FAIL,
-				"message": fmt.Sprintf("DATABASE_EXEC_FAIL: %s", err.Error())})
-			return
-		}
+		return Locations, err
 	}
-	c.JSON(http.StatusOK, Location)
+
+	for rows.Next() {
+		rows.Scan(&lf.Locid, &lf.Name, &lf.Latitude, &lf.Longitude)
+		if lf.Name.Valid {
+			locout.Name = lf.Name.String
+		}
+		if lf.Latitude.Valid {
+			locout.Latitude = lf.Latitude.Float64
+		}
+		if lf.Longitude.Valid {
+			locout.Longitude = lf.Longitude.Float64
+		}
+		locout.Locid = lf.Locid
+		Locations = append(Locations, locout)
+	}
+
+	if len(Locations) == 0 {
+		return Locations, errors.New("Location not found.")
+	}
+
+	return Locations, err
+}
+
+func GetLocation(id, limit, offset int64) (Locations []LocationOut, err error) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	var sbLoc strings.Builder
+	var lf LocationFull
+	var Location LocationOut
+
+	sbLoc.WriteString(fmt.Sprintf("SELECT locid, name, latitude, longitude FROM location WHERE deleted = 0"))
+
+	// ambil all
+	if id == -1 {
+		if limit == 0 {
+			sbLoc.WriteString(fmt.Sprintf(" limit %d offset %d", 10, 0))
+		} else {
+			sbLoc.WriteString(fmt.Sprintf(" limit %d offset %d", limit, offset))
+		}
+	} else { // ambil id
+		sbLoc.WriteString(fmt.Sprintf(" AND locid = %d", id))
+	}
+	log.Println(sbLoc.String())
+
+	rows, err := Query(sbLoc.String())
+	if err != nil {
+		return Locations, err
+	}
+
+	for rows.Next() {
+		rows.Scan(&lf.Locid, &lf.Name, &lf.Latitude, &lf.Longitude)
+		Location.Locid = lf.Locid
+		if lf.Name.Valid {
+			Location.Name = lf.Name.String
+		}
+		if lf.Latitude.Valid {
+			Location.Latitude = lf.Latitude.Float64
+		}
+		if lf.Longitude.Valid {
+			Location.Longitude = lf.Longitude.Float64
+		}
+		Locations = append(Locations, Location)
+	}
+
+	if len(Locations) == 0 {
+		return Locations, errors.New("Location not found.")
+	}
+
+	return Locations, err
+}
+
+func UpdateLocation(id int64, locin LocationIn) (Location LocationOut, err error) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	var sbLoc strings.Builder
+	// var lf LocationFull
+	var Locations []LocationOut
+
+	Locations, err = GetLocation(id, 0, 0)
+	if err != nil {
+		return
+	}
+	if len(Locations) == 0 {
+		return LocationOut{}, errors.New("Location not found.")
+	}
+
+	sbLoc.WriteString(fmt.Sprintf(`UPDATE location SET
+	name = '%s', latitude = %2.8f, longitude = %3.8f WHERE locid = %d`,
+		locin.Name, locin.Latitude, locin.Longitude, id))
+
+	log.Println(sbLoc.String())
+	result, err := Exec(sbLoc.String())
+	if err != nil {
+		return
+	}
+	log.Println(result.RowsAffected())
+
+	Locations, err = GetLocation(id, 0, 0)
+	if err != nil {
+		return
+	}
+
+	Location = Locations[0]
+
 	return
 }
 
-func DeleteLocationHandler(c *gin.Context) {
+func DeleteLocation(id int64) (err error) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	var input loc.LocationIn
+	var sbLoc strings.Builder
 
-	var segments = strings.Split(c.Param("path1"), "/")
-	var id int64
+	sbLoc.WriteString(fmt.Sprintf(`UPDATE location SET deleted = 1 WHERE locid = %d`, id))
 
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": loc.INPUT_VALIDATION_FAIL,
-			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", err.Error())})
-		return
-	}
+	// Locations, err := GetLocation(id, 0, 0)
+	// log.Println(Locations)
+	// if err != nil {
+	// 	return
+	// }
+	// if len(Locations) == 0 {
+	// 	return errors.New("Location not found.")
+	// }
 
-	i, e := strconv.Atoi(segments[1])
-	if e == nil { // konversi berhasil
-		id = int64(i)
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"code": loc.INPUT_VALIDATION_FAIL,
-			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", e.Error())})
-		return
-	}
-
-	err := loc.DeleteLocation(id)
+	result, err := Exec(sbLoc.String())
 	if err != nil {
-		if strings.Compare("Contact not found.", err.Error()) == 0 {
-			c.JSON(http.StatusNotFound, loc.NOT_FOUND)
-			return
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": loc.DATABASE_EXEC_FAIL,
-				"message": fmt.Sprintf("DATABASE_EXEC_FAIL: %s", err.Error())})
-			return
-		}
+		return
+	}
+	raff, err := result.RowsAffected()
+	log.Println(raff)
+	if err != nil {
+		return
+	}
+	if raff == 0 {
+		return errors.New("Location not found.")
 	}
 
-	// FIXME: Perbaiki ini, ini harusnya bukan no content tapi ok dan ada status di body.
-	c.JSON(http.StatusNoContent, nil)
+	lcs, err := GetLocation(id, 0, 0)
+	if err.Error() == "Location not found." {
+		return nil
+	}
+	if len(lcs) != 0 {
+		err = errors.New("Record deletion fail.")
+	}
+
 	return
 }
