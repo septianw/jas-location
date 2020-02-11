@@ -15,15 +15,15 @@ func SetEnvironment() {
 	var rt types.Runtime
 	var Dbconf types.Dbconf
 
-	Dbconf.Database = "ipoint"
+	Dbconf.Database = "ahsan_test"
 	Dbconf.Host = "localhost"
-	Dbconf.Pass = "dummypass"
-	Dbconf.Port = 3306
+	Dbconf.Pass = "wonderland"
+	Dbconf.Port = 3307
 	Dbconf.Type = "mysql"
-	Dbconf.User = "asep"
+	Dbconf.User = "alice"
 
 	rt.Dbconf = Dbconf
-	rt.Libloc = "/home/asep/gocode/src/github.com/septianw/jas/libs"
+	rt.Libloc = "/home/alice/go/src/github.com/septianw/jas-location/test"
 
 	common.WriteRuntime(rt)
 }
@@ -39,6 +39,7 @@ func TestInsertLocation(t *testing.T) {
 	var locin LocationIn
 
 	locin.Name = "karanggedang"
+	locin.Address = "sweet st. no 404 wonderland"
 	locin.Latitude = -90.4455595
 	locin.Longitude = 110.99288848
 	Location, err := InsertLocation(locin)

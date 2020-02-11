@@ -82,12 +82,12 @@ func SetEnvironment() {
 	var rt types.Runtime
 	var Dbconf types.Dbconf
 
-	Dbconf.Database = "ipoint"
+	Dbconf.Database = "ahsan_test"
 	Dbconf.Host = "localhost"
-	Dbconf.Pass = "dummypass"
-	Dbconf.Port = 3306
+	Dbconf.Pass = "wonderland"
+	Dbconf.Port = 3307
 	Dbconf.Type = "mysql"
-	Dbconf.User = "asep"
+	Dbconf.User = "alice"
 
 	rt.Dbconf = Dbconf
 	rt.Libloc = "/home/asep/gocode/src/github.com/septianw/jas/libs"
@@ -106,6 +106,8 @@ func TestLocationPostPositive(t *testing.T) {
 	var locin lp.LocationIn
 
 	locin.Name = "kedunggalar"
+	//locin.Address = "sweet st. no 404 wonderland"
+	locin.Address = "wonderland"
 	locin.Latitude = -12.85993810
 	locin.Longitude = 100.34589023
 
@@ -119,7 +121,7 @@ func TestLocationPostPositive(t *testing.T) {
 	}
 
 	q := quest{
-		pload:  payload{"POST", "/api/v1/location", strings.NewReader(string(locinJson))},
+		pload:  payload{"POST", "/api/v1/location/", strings.NewReader(string(locinJson))},
 		heads:  headers{},
 		expect: expectation{201, "contact post"},
 	}
@@ -127,23 +129,23 @@ func TestLocationPostPositive(t *testing.T) {
 	rec := doTheTest(q.pload, q.heads)
 	log.Println(rec.Body.String())
 
-	// Locations, err := lp.FindLocation(locin)
-	// if err != nil {
-	// 	t.Logf("Locations found: %+v", Locations)
-	// 	t.Logf("err FindLocation: %+v", err)
-	// 	t.Fail()
-	// }
+	Locations, err := lp.FindLocation(locin)
+	if err != nil {
+		t.Logf("Locations found: %+v", Locations)
+		t.Logf("err FindLocation: %+v", err)
+		t.Fail()
+	}
 
-	// locationsJson, err := json.Marshal(Locations[0])
-	// if err != nil {
-	// 	t.Logf("LocationJson: %+v", string(locationsJson))
-	// 	t.Logf("err: %+v", err)
-	// 	t.Fail()
-	// }
+	locationsJson, err := json.Marshal(Locations[0])
+	if err != nil {
+		t.Logf("LocationJson: %+v", string(locationsJson))
+		t.Logf("err: %+v", err)
+		t.Fail()
+	}
 
 	assert.Equal(t, q.expect.Code, rec.Code)
 	// assert.Equal(t, string(locationsJson), strings.TrimSpace(rec.Body.String()))
-	assert.Equal(t, "test", strings.TrimSpace(rec.Body.String()))
+	assert.Equal(t, string(locationsJson), strings.TrimSpace(rec.Body.String()))
 }
 
 // FIXME
