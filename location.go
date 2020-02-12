@@ -40,6 +40,7 @@ func Exec(q string) (sql.Result, error) {
 type LocationFull struct {
 	Locid     int64
 	Name      sql.NullString
+	Address   sql.NullString
 	Latitude  sql.NullFloat64
 	Longitude sql.NullFloat64
 	Deleted   int8
@@ -48,12 +49,14 @@ type LocationFull struct {
 type LocationOut struct {
 	Locid     int64   `json:"locid" binding:"required"`
 	Name      string  `json:"name" binding:"required"`
+	Address   string  `json:"address" binding:"required"`
 	Latitude  float64 `json:"latitude" binding:"required"`
 	Longitude float64 `json:"longitude" binding:"required"`
 }
 
 type LocationIn struct {
 	Name      string  `json:"name" binding:"required"`
+	Address   string  `json:"address" binding:"required"`
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 }
@@ -124,9 +127,8 @@ func InsertLocation(locin LocationIn) (Location LocationOut, err error) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	var sbLoc strings.Builder
 	var Locations []LocationOut
-
-	sbLoc.WriteString(fmt.Sprintf(`Insert into location (name, latitude, longitude, deleted)
-	values ('%s', %2.8f, %3.8f, 0)`, locin.Name, locin.Latitude, locin.Longitude))
+	sbLoc.WriteString(fmt.Sprintf(`Insert into location (name, address, latitude, longitude, deleted)
+	values ('%s', '%s', %2.8f, %3.8f, 0)`, locin.Name, locin.Address, locin.Latitude, locin.Longitude))
 	log.Println(sbLoc.String())
 
 	result, err := Exec(sbLoc.String())
@@ -159,10 +161,13 @@ func FindLocation(Location LocationIn) (Locations []LocationOut, err error) {
 	var lf LocationFull
 	var locout LocationOut
 
-	sbLoc.WriteString("SELECT locid, name, latitude, longitude FROM location WHERE deleted = 0")
+	sbLoc.WriteString("SELECT locid, name, address, latitude, longitude FROM location WHERE deleted = 0")
 
 	if strings.Compare(Location.Name, "") != 0 {
 		sbLoc.WriteString(fmt.Sprintf(" and name = '%s'", Location.Name))
+	}
+	if strings.Compare(Location.Address, "") != 0 {
+		sbLoc.WriteString(fmt.Sprintf(" and address = '%s'", Location.Address))
 	}
 	if Location.Latitude != 0 {
 		sbLoc.WriteString(fmt.Sprintf(" and latitude = %2.8f", Location.Latitude))
@@ -178,9 +183,12 @@ func FindLocation(Location LocationIn) (Locations []LocationOut, err error) {
 	}
 
 	for rows.Next() {
-		rows.Scan(&lf.Locid, &lf.Name, &lf.Latitude, &lf.Longitude)
+		rows.Scan(&lf.Locid, &lf.Name, &lf.Address, &lf.Latitude, &lf.Longitude)
 		if lf.Name.Valid {
 			locout.Name = lf.Name.String
+		}
+		if lf.Address.Valid {
+			locout.Address = lf.Address.String
 		}
 		if lf.Latitude.Valid {
 			locout.Latitude = lf.Latitude.Float64
@@ -205,7 +213,7 @@ func GetLocation(id, limit, offset int64) (Locations []LocationOut, err error) {
 	var lf LocationFull
 	var Location LocationOut
 
-	sbLoc.WriteString(fmt.Sprintf("SELECT locid, name, latitude, longitude FROM location WHERE deleted = 0"))
+	sbLoc.WriteString(fmt.Sprintf("SELECT locid, name, address, latitude, longitude FROM location WHERE deleted = 0"))
 
 	// ambil all
 	if id == -1 {
@@ -225,10 +233,13 @@ func GetLocation(id, limit, offset int64) (Locations []LocationOut, err error) {
 	}
 
 	for rows.Next() {
-		rows.Scan(&lf.Locid, &lf.Name, &lf.Latitude, &lf.Longitude)
+		rows.Scan(&lf.Locid, &lf.Name, &lf.Address, &lf.Latitude, &lf.Longitude)
 		Location.Locid = lf.Locid
 		if lf.Name.Valid {
 			Location.Name = lf.Name.String
+		}
+		if lf.Address.Valid {
+			Location.Address = lf.Address.String
 		}
 		if lf.Latitude.Valid {
 			Location.Latitude = lf.Latitude.Float64
@@ -261,8 +272,8 @@ func UpdateLocation(id int64, locin LocationIn) (Location LocationOut, err error
 	}
 
 	sbLoc.WriteString(fmt.Sprintf(`UPDATE location SET
-	name = '%s', latitude = %2.8f, longitude = %3.8f WHERE locid = %d`,
-		locin.Name, locin.Latitude, locin.Longitude, id))
+	name = '%s', address = '%s', latitude = %2.8f, longitude = %3.8f WHERE locid = %d`,
+		locin.Name, locin.Address, locin.Latitude, locin.Longitude, id))
 
 	log.Println(sbLoc.String())
 	result, err := Exec(sbLoc.String())

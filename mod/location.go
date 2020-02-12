@@ -136,7 +136,7 @@ func PostLocationHandler(c *gin.Context) {
 			"message": fmt.Sprintf("INPUT_VALIDATION_FAIL: %s", err.Error())})
 		return
 	}
-
+	fmt.Println(input)
 	Location, err := loc.InsertLocation(input)
 	if err != nil {
 		if strings.Compare("Contact not found.", err.Error()) == 0 {
